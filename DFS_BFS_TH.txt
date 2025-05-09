@@ -1,0 +1,166 @@
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <stack>
+#include <omp.h> // OpenMP for parallel processing
+
+using namespace std;
+
+// Define the maximum number of nodes
+const int MAXN = 100005;
+
+// Adjacency list representation of the graph
+vector<int> adj[MAXN];
+
+// Visited array to keep track of explored nodes
+bool visited[MAXN];
+
+// Function to perform a parallel Breadth-First Search (BFS)
+void parallel_bfs(int start) {
+    queue<int> q;
+    q.push(start);          // Begin BFS from the starting node
+    visited[start] = true;  // Mark the start node as visited
+
+    while (!q.empty()) {
+        int level_size = q.size();          // Number of nodes at the current level
+        vector<int> current_level;
+
+        // Extract all nodes from the current level
+        for (int i = 0; i < level_size; i++) {
+            int v = q.front();
+            q.pop();
+            cout << v << " ";               // Output the visited node
+            current_level.push_back(v);     // Store for parallel processing
+        }
+
+        vector<int> next_level;
+
+        // Process neighbors in parallel
+        #pragma omp parallel for
+        for (int i = 0; i < current_level.size(); i++) {
+            int v = current_level[i];
+            for (int u : adj[v]) {
+                // Critical section to ensure thread-safe access to shared structures
+                #pragma omp critical
+                {
+                    if (!visited[u]) {
+                        visited[u] = true;     // Mark as visited
+                        next_level.push_back(u); // Queue for next level
+                    }
+                }
+            }
+        }
+
+        // Push all discovered neighbors to the queue for next iteration
+        for (int u : next_level)
+            q.push(u);
+    }
+}
+
+// Function to perform a parallel Depth-First Search (DFS)
+void parallel_dfs(int start) {
+    stack<int> s;
+    s.push(start);            // Begin DFS from the starting node
+    visited[start] = true;    // Mark the start node as visited
+
+    while (!s.empty()) {
+        int v = s.top();
+        s.pop();
+        cout << v << " ";     // Output the visited node
+
+        vector<int> neighbors;
+
+        // Collect unvisited neighbors in parallel
+        #pragma omp parallel for
+        for (int i = 0; i < adj[v].size(); i++) {
+            int u = adj[v][i];
+            bool needs_push = false;
+
+            // Critical section for safe visited check/update
+            #pragma omp critical
+            {
+                if (!visited[u]) {
+                    visited[u] = true;
+                    needs_push = true;
+                }
+            }
+
+            // Add to neighbor list (inside critical to avoid concurrent write)
+            if (needs_push) {
+                #pragma omp critical
+                neighbors.push_back(u);
+            }
+        }
+
+        // Push neighbors to the stack
+        for (int u : neighbors)
+            s.push(u);
+    }
+}
+
+// Utility function to reset visited nodes before each traversal
+void reset_visited(int n) {
+    for (int i = 1; i <= n; i++)
+        visited[i] = false;
+}
+
+// Main function driving the interaction
+int main() {
+    int n, m;
+    cout << "Enter number of nodes and edges: ";
+    cin >> n >> m;
+
+    // Validation: A simple check to avoid impossible edge counts in undirected graphs
+    if (m > n * (n - 1) / 2) {
+        cout << "Error: Too many edges.\n";
+        return 1;
+    }
+
+    // Accepting graph input
+    cout << "Enter edges:\n";
+    for (int i = 0; i < m; i++) {
+        int u, v;
+        cin >> u >> v;
+        adj[u].push_back(v);  // Add edge u -> v
+        adj[v].push_back(u);  // Add edge v -> u (undirected)
+    }
+
+    // Interactive menu loop
+    while (true) {
+        cout << "\nChoose an option:\n1. Parallel BFS\n2. Parallel DFS\n3. Exit\nEnter your choice: ";
+        int choice;
+        cin >> choice;
+        if (choice == 3) break;
+
+        cout << "Enter starting node: ";
+        int start;
+        cin >> start;
+
+        // Reset visited state before new traversal
+        reset_visited(n);
+
+        // Execute chosen traversal algorithm
+        if (choice == 1) {
+            cout << "Running Parallel BFS...\nVisited nodes: ";
+            parallel_bfs(start);
+        } else if (choice == 2) {
+            cout << "Running Parallel DFS...\nVisited nodes: ";
+            parallel_dfs(start);
+        }
+
+        // Check and handle disconnected components
+        for (int i = 1; i <= n; i++) {
+            if (!visited[i] && !adj[i].empty()) {
+                cout << "\nGraph has disconnected components. Running again from node: " << i << endl;
+                if (choice == 1)
+                    parallel_bfs(i);
+                else
+                    parallel_dfs(i);
+            }
+        }
+
+        cout << endl;
+    }
+
+    return 0;
+}

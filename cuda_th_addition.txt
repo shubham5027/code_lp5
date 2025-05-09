@@ -1,0 +1,82 @@
+#include <iostream>              // For standard I/O operations
+#include <cuda_runtime.h>       // CUDA runtime API header
+
+// CUDA kernel function to perform vector addition on the device (GPU)
+__global__ void vectorAdd(float *A, float *B, float *C, int N) {
+    // Calculate global thread ID
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+    // Ensure thread does not exceed bounds of the array
+    if (idx < N) {
+        C[idx] = A[idx] + B[idx];  // Perform element-wise addition
+    }
+}
+
+int main() {
+    int N = 10;  // Number of elements in the vector
+    size_t size = N * sizeof(float);  // Total size in bytes for each vector
+
+    // Host pointers (CPU)
+    float *A, *B, *C;
+
+    // Device pointers (GPU)
+    float *d_A, *d_B, *d_C;
+
+    // Allocate memory on host
+    A = (float*)malloc(size);
+    B = (float*)malloc(size);
+    C = (float*)malloc(size);
+
+    // Allocate memory on device (GPU)
+    cudaMalloc(&d_A, size);
+    cudaMalloc(&d_B, size);
+    cudaMalloc(&d_C, size);
+
+    // Initialize vectors A and B on the host
+    for (int i = 0; i < N; i++) {
+        A[i] = i + 1;         // A = [1, 2, 3, ..., 10]
+        B[i] = (i + 1) * 2;   // B = [2, 4, 6, ..., 20]
+    }
+
+    // Copy input data from host to device memory
+    cudaMemcpy(d_A, A, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B, size, cudaMemcpyHostToDevice);
+
+    // Define CUDA kernel launch configuration
+    int threadsPerBlock = 256;                              // Number of threads per block
+    int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock; // Number of blocks needed
+
+    // Launch the kernel on the device
+    vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
+
+    // Copy result back from device to host
+    cudaMemcpy(C, d_C, size, cudaMemcpyDeviceToHost);
+
+    // Print the original vectors and the result
+    std::cout << "Vector A: ";
+    for (int i = 0; i < N; i++) {
+        std::cout << A[i] << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Vector B: ";
+    for (int i = 0; i < N; i++) {
+        std::cout << B[i] << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Calculations (A[i] + B[i]):" << std::endl;
+    for (int i = 0; i < N; i++) {
+        std::cout << "C[" << i << "] = " << A[i] << " + " << B[i] << " = " << C[i] << std::endl;
+    }
+
+    // Free dynamically allocated memory on host and device
+    free(A);
+    free(B);
+    free(C);
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return 0;  // Successful execution
+}
